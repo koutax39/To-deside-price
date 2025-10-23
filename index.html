@@ -26,6 +26,15 @@
     input, select { width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 1rem; }
     .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .radio { display: inline-flex; align-items: center; gap: 6px; margin-right: 10px; font-size: .95rem; color: var(--muted); }
+    .radio input { transform: scale(0.9); }
+    .radio label { font-size: .9rem; }
+
+    /* スマホ画面での丸め選択をコンパクトに */
+    @media (max-width: 480px) {
+      #roundModeWrap { flex-direction: column; align-items: flex-start; }
+      .radio { margin: 4px 0; font-size: .9rem; }
+    }
+
     .title-sm { font-size: 0.9rem; color: var(--muted); }
     .price { font-size: 1.6rem; font-weight: 800; }
     .fine { font-size: 0.78rem; color: var(--muted); }
@@ -134,7 +143,6 @@
       const step = Number(stepSel.value);
       const mode = roundMode();
 
-      // 卸→売価
       PRESETS.forEach(m => {
         const retail = W > 0 ? roundByStep(W / (1 - m), step, mode) : NaN;
         const item = document.createElement('div');
@@ -149,13 +157,11 @@
         retailBox.appendChild(item);
       });
 
-      // 実際の粗利率
       const gpm = (R>0 && W>0) ? (R - W) / R : NaN;
       marginActual.textContent = Number.isFinite(gpm) ? (gpm*100).toFixed(2) + '%' : '—';
       wholesaleEcho.textContent = jpy(W);
       retailEcho.textContent = jpy(R);
 
-      // 売価→卸（逆算）
       PRESETS.forEach(m => {
         const ww = R > 0 ? roundByStep(R * (1 - m), step, mode) : NaN;
         const item = document.createElement('div');
@@ -170,15 +176,12 @@
         wholesaleBox.appendChild(item);
       });
 
-      // 保存（簡易）
       localStorage.setItem('price-app', JSON.stringify({ W, R, step, mode }));
     }
 
-    // 入力イベント
     [wholesaleInput, retailInput, stepSel].forEach(i => i.addEventListener('input', renderBoxes));
     roundModeWrap.addEventListener('change', renderBoxes);
 
-    // 復元
     try {
       const saved = JSON.parse(localStorage.getItem('price-app') || '{}');
       if (saved.W) wholesaleInput.value = saved.W;
@@ -190,7 +193,6 @@
       }
     } catch (e) {}
 
-    // 初回描画
     renderBoxes();
   </script>
 </body>
