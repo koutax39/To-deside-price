@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>販売価格決断アプリ（シングルファイル版）</title>
+  <style>
+    :root {
+      --bg: #f8fafc; /* slate-50 */
+      --card: #ffffff;
+      --text: #0f172a; /* slate-900 */
+      --muted: #475569; /* slate-600 */
+      --border: #e2e8f0; /* slate-200 */
+      --primary: #2563eb; /* blue-600 */
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif; background: var(--bg); color: var(--text); }
+    .container { max-width: 960px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 1.6rem; margin: 0 0 8px; }
+    p.lead { margin: 0 0 16px; color: var(--muted); }
+    .grid { display: grid; gap: 16px; }
+    @media (min-width: 768px) { .grid.cols-2 { grid-template-columns: 1fr 1fr; } .grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; } }
+
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+    label { display: block; font-size: 0.9rem; color: var(--muted); margin: 0 0 6px; }
+    input, select { width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 1rem; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .radio { display: inline-flex; align-items: center; gap: 6px; margin-right: 10px; font-size: .95rem; color: var(--muted); }
+    .title-sm { font-size: 0.9rem; color: var(--muted); }
+    .price { font-size: 1.6rem; font-weight: 800; }
+    .fine { font-size: 0.78rem; color: var(--muted); }
+    .btn { border: 1px solid var(--border); background: #f1f5f9; border-radius: 10px; padding: 6px 10px; font-size: 0.9rem; cursor: pointer; }
+    .btn:active { transform: translateY(1px); }
+    .hint { font-size: .85rem; color: var(--muted); }
+    footer { margin-top: 24px; font-size: .85rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>販売価格決断アプリ（シングルファイル版）</h1>
+    <p class="lead">卸→売価の一括計算（<b>3割 / 2.5割 / 2割</b>）、売価→卸の逆算、実際の粗利率を即時計算。スマホでも快適に使えます。</p>
+
+    <section class="card grid cols-2">
+      <div>
+        <label for="wholesale">卸売単価（税抜・円）</label>
+        <input id="wholesale" inputmode="numeric" placeholder="例: 420" />
+      </div>
+      <div>
+        <label for="retail">目標店頭売価（任意・円）</label>
+        <input id="retail" inputmode="numeric" placeholder="例: 498" />
+      </div>
+      <div>
+        <label>端数処理（丸め）</label>
+        <div class="row" id="roundModeWrap">
+          <label class="radio"><input type="radio" name="round" value="ceil" />切り上げ</label>
+          <label class="radio"><input type="radio" name="round" value="round" checked />四捨五入</label>
+          <label class="radio"><input type="radio" name="round" value="floor" />切り捨て</label>
+        </div>
+      </div>
+      <div>
+        <label for="step">丸め単位</label>
+        <select id="step">
+          <option value="1">1 円</option>
+          <option value="5">5 円</option>
+          <option value="10" selected>10 円</option>
+          <option value="50">50 円</option>
+          <option value="100">100 円</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="title-sm">想定店頭売価（卸 → 売価）</h2>
+      <div class="grid cols-3" id="retailBox"></div>
+    </section>
+
+    <section class="card grid cols-3">
+      <div>
+        <h2 class="title-sm">実際の粗利率（卸 & 目標売価 → 粗利率）</h2>
+        <div class="price" id="marginActual">—</div>
+        <div class="fine">= (売価 − 卸) ÷ 売価</div>
+      </div>
+      <div>
+        <h2 class="title-sm">卸</h2>
+        <div class="price" id="wholesaleEcho">—</div>
+      </div>
+      <div>
+        <h2 class="title-sm">目標売価</h2>
+        <div class="price" id="retailEcho">—</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="title-sm">逆算卸価格（目標売価 → 卸）</h2>
+      <div class="grid cols-3" id="wholesaleBox"></div>
+    </section>
+
+    <footer>
+      <div class="hint"><b>定義：</b>粗利率は<mark>売価基準</mark>（値入れ率）で計算： (売価 − 卸) ÷ 売価。売価 = 卸 ÷ (1 − 粗利率)／卸 = 売価 × (1 − 粗利率)。</div>
+    </footer>
+  </main>
+
+  <script>
+    const PRESETS = [0.3, 0.25, 0.2];
+
+    const el = (sel) => document.querySelector(sel);
+    const wholesaleInput = el('#wholesale');
+    const retailInput = el('#retail');
+    const retailBox = el('#retailBox');
+    const wholesaleBox = el('#wholesaleBox');
+    const marginActual = el('#marginActual');
+    const wholesaleEcho = el('#wholesaleEcho');
+    const retailEcho = el('#retailEcho');
+    const stepSel = el('#step');
+
+    const roundModeWrap = el('#roundModeWrap');
+    const roundMode = () => (roundModeWrap.querySelector('input:checked')?.value || 'round');
+
+    const num = (v) => Number(String(v).replace(/[^0-9.]/g, '')) || 0;
+    const jpy = (n) => Number.isFinite(n) ? Math.round(n).toLocaleString('ja-JP') + ' 円' : '—';
+
+    function roundByStep(value, step, mode) {
+      if (!Number.isFinite(value)) return NaN;
+      const v = value / step;
+      const r = mode === 'ceil' ? Math.ceil(v) : mode === 'floor' ? Math.floor(v) : Math.round(v);
+      return r * step;
+    }
+
+    function renderBoxes() {
+      retailBox.innerHTML = '';
+      wholesaleBox.innerHTML = '';
+      const W = num(wholesaleInput.value);
+      const R = num(retailInput.value);
+      const step = Number(stepSel.value);
+      const mode = roundMode();
+
+      // 卸→売価
+      PRESETS.forEach(m => {
+        const retail = W > 0 ? roundByStep(W / (1 - m), step, mode) : NaN;
+        const item = document.createElement('div');
+        item.className = 'card';
+        item.innerHTML = `
+          <div class="title-sm">粗利率 ${(m*100).toFixed(1)}%</div>
+          <div class="price">${jpy(retail)}</div>
+          <div class="fine">= 卸 ÷ (1 − ${m})</div>
+          <button class="btn" ${Number.isFinite(retail)?'':'disabled'}>コピー</button>
+        `;
+        item.querySelector('button').onclick = () => navigator.clipboard.writeText(String(Math.round(retail)));
+        retailBox.appendChild(item);
+      });
+
+      // 実際の粗利率
+      const gpm = (R>0 && W>0) ? (R - W) / R : NaN;
+      marginActual.textContent = Number.isFinite(gpm) ? (gpm*100).toFixed(2) + '%' : '—';
+      wholesaleEcho.textContent = jpy(W);
+      retailEcho.textContent = jpy(R);
+
+      // 売価→卸（逆算）
+      PRESETS.forEach(m => {
+        const ww = R > 0 ? roundByStep(R * (1 - m), step, mode) : NaN;
+        const item = document.createElement('div');
+        item.className = 'card';
+        item.innerHTML = `
+          <div class="title-sm">粗利率 ${(m*100).toFixed(1)}%</div>
+          <div class="price">${jpy(ww)}</div>
+          <div class="fine">= 売価 × (1 − ${m})</div>
+          <button class="btn" ${Number.isFinite(ww)?'':'disabled'}>コピー</button>
+        `;
+        item.querySelector('button').onclick = () => navigator.clipboard.writeText(String(Math.round(ww)));
+        wholesaleBox.appendChild(item);
+      });
+
+      // 保存（簡易）
+      localStorage.setItem('price-app', JSON.stringify({ W, R, step, mode }));
+    }
+
+    // 入力イベント
+    [wholesaleInput, retailInput, stepSel].forEach(i => i.addEventListener('input', renderBoxes));
+    roundModeWrap.addEventListener('change', renderBoxes);
+
+    // 復元
+    try {
+      const saved = JSON.parse(localStorage.getItem('price-app') || '{}');
+      if (saved.W) wholesaleInput.value = saved.W;
+      if (saved.R) retailInput.value = saved.R;
+      if (saved.step) stepSel.value = String(saved.step);
+      if (saved.mode) {
+        const r = roundModeWrap.querySelector(`input[value="${saved.mode}"]`);
+        if (r) r.checked = true;
+      }
+    } catch (e) {}
+
+    // 初回描画
+    renderBoxes();
+  </script>
+</body>
+</html>
